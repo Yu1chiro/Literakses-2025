@@ -276,7 +276,7 @@ app.post('/api/approve-loan/:id', protectAdmin, async (req, res) => {
             WHERE id = $4`, 
             [bookAccessToken, expiresAt, accessCode, id]
         );
-
+        const baseUrl = process.env.BASE_URL || `http://${req.get('host')}`;
         const bookResult = await client.query('SELECT title FROM books WHERE id = $1', [loanReq.book_id]);
         const bookTitle = bookResult.rows[0].title;
         
@@ -305,7 +305,7 @@ app.post('/api/approve-loan/:id', protectAdmin, async (req, res) => {
                                     Kabar baik! Peminjaman buku <strong>"${bookTitle}"</strong> Anda telah disetujui.
                                 </p>
                                 <p style="margin: 0 0 25px 0; color: #4b5563; font-size: 16px;">
-                                    Silakan salin token akses di bawah ini dan masukkan di halaman <a href="http://${req.get('host')}/listbook" style="color: #667eea;">daftar pinjaman</a> Anda untuk mulai membaca.
+                                    Silakan salin token akses di bawah ini dan masukkan di halaman <a href="http://${baseUrl}/listbook" style="color: #667eea;">daftar pinjaman</a> Anda untuk mulai membaca.
                                 </p>
                                 <div style="background-color: #f0f9ff; border: 2px dashed #93c5fd; padding: 20px; border-radius: 8px; text-align: center; margin: 25px 0;">
                                     <p style="margin: 0 0 10px 0; color: #1e40af; font-size: 14px; font-weight: 600;">TOKEN AKSES BUKU ANDA</p>
