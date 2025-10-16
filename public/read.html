@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Baca Buku</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.10.377/pdf.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { 
+            font-family: 'Inter', sans-serif;
+        }
+        #pdf-viewer canvas {
+            max-width: 100%;
+            height: auto;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+    </style>
+</head>
+<body class="bg-gradient-to-br from-gray-50 to-gray-100 min-h-screen">
+    <!-- Header -->
+    <header class="bg-white shadow-md sticky top-0 z-50 border-b border-gray-200">
+        <div class="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="py-4 sm:py-5">
+                <h1 id="book-title" class="text-lg sm:text-xl md:text-2xl font-bold text-gray-900 truncate pr-4">
+                    Memuat Buku...
+                </h1>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 pb-32">
+        <!-- Message Container -->
+        <div id="message-container" class="text-center py-12">
+            <div class="inline-flex items-center justify-center w-16 h-16 bg-indigo-100 rounded-full mb-4">
+                <svg class="w-8 h-8 text-indigo-600 animate-spin" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+            </div>
+            <p id="loading-message" class="text-base sm:text-lg text-gray-600 font-medium">
+                Memverifikasi akses dan memuat buku, mohon tunggu...
+            </p>
+        </div>
+
+        <!-- PDF Viewer -->
+        <div id="pdf-viewer" class="flex justify-center"></div>
+    </main>
+
+    <!-- Fixed Bottom Navigation -->
+    <nav id="pagination" class="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 shadow-lg z-50" style="display: none;">
+        <div class="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+            <!-- Mobile Layout -->
+            <div class="flex items-center justify-between sm:hidden">
+                <button id="prev-page-mobile" class="flex items-center justify-center w-12 h-12 bg-indigo-600 text-white rounded-lg shadow-md hover:bg-indigo-700 active:bg-indigo-800 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M15 19l-7-7 7-7"/>
+                    </svg>
+                </button>
+                
+                <div class="flex flex-col items-center">
+                    <div class="flex items-baseline space-x-1 text-gray-900">
+                        <span id="page-num-mobile" class="text-2xl font-bold">1</span>
+                        <span class="text-gray-400 font-medium">/</span>
+                        <span id="page-count-mobile" class="text-lg font-semibold text-gray-600">0</span>
+                    </div>
+                    <span class="text-xs text-gray-500 mt-0.5">Halaman</span>
+                </div>
+                
+                <button id="next-page-mobile" class="flex items-center justify-center w-12 h-12 bg-indigo-600 text-white rounded-lg shadow-md hover:bg-indigo-700 active:bg-indigo-800 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/>
+                    </svg>
+                </button>
+            </div>
+
+            <!-- Desktop Layout -->
+            <div class="hidden sm:flex items-center justify-between">
+                <button id="prev-page" class="flex items-center space-x-2 px-5 py-2.5 bg-indigo-600 text-white rounded-lg shadow-sm hover:bg-indigo-700 active:bg-indigo-800 disabled:bg-gray-300 disabled:cursor-not-allowed transition-all font-medium">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+                    </svg>
+                    <span>Sebelumnya</span>
+                </button>
+                
+                <div class="flex items-center space-x-3 bg-gray-50 px-6 py-2.5 rounded-lg border border-gray-200">
+                    <span class="text-sm text-gray-600 font-medium">Halaman</span>
+                    <div class="flex items-baseline space-x-2">
+                        <span id="page-num" class="text-2xl font-bold text-gray-900">1</span>
+                        <span class="text-gray-400 font-medium">/</span>
+                        <span id="page-count" class="text-xl font-semibold text-gray-600">0</span>
+                    </div>
+                </div>
+                
+                <button id="next-page" class="flex items-center space-x-2 px-5 py-2.5 bg-indigo-600 text-white rounded-lg shadow-sm hover:bg-indigo-700 active:bg-indigo-800 disabled:bg-gray-300 disabled:cursor-not-allowed transition-all font-medium">
+                    <span>Selanjutnya</span>
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                    </svg>
+                </button>
+            </div>
+        </div>
+    </nav>
+
+    <script>
+    const bookTitleEl = document.getElementById('book-title');
+    const loadingMessageEl = document.getElementById('loading-message');
+    const pdfViewer = document.getElementById('pdf-viewer');
+    const prevPageBtn = document.getElementById('prev-page');
+    const nextPageBtn = document.getElementById('next-page');
+    const prevPageBtnMobile = document.getElementById('prev-page-mobile');
+    const nextPageBtnMobile = document.getElementById('next-page-mobile');
+    const pageNumEl = document.getElementById('page-num');
+    const pageCountEl = document.getElementById('page-count');
+    const pageNumElMobile = document.getElementById('page-num-mobile');
+    const pageCountElMobile = document.getElementById('page-count-mobile');
+    const paginationControls = document.getElementById('pagination');
+
+    let pdfDoc = null;
+    let pageNum = 1;
+
+    async function loadBook() {
+        const urlParams = new URLSearchParams(window.location.search);
+        const token = urlParams.get('token');
+
+        if (!token) {
+            loadingMessageEl.textContent = 'Token akses tidak ditemukan di URL.';
+            loadingMessageEl.parentElement.querySelector('div').classList.remove('bg-indigo-100');
+            loadingMessageEl.parentElement.querySelector('div').classList.add('bg-red-100');
+            loadingMessageEl.parentElement.querySelector('svg').classList.remove('text-indigo-600', 'animate-spin');
+            loadingMessageEl.parentElement.querySelector('svg').classList.add('text-red-600');
+            return;
+        }
+
+        try {
+            const response = await fetch(`/api/read-book?token=${token}`);
+            const result = await response.json();
+
+            if (!response.ok) {
+                throw new Error(result.error || 'Gagal memuat buku.');
+            }
+            
+            document.getElementById('message-container').style.display = 'none';
+            bookTitleEl.textContent = result.title;
+            
+            const pdfUrl = result.file_url;
+            const pdfjsLib = window['pdfjs-dist/build/pdf'];
+            pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.10.377/pdf.worker.min.js';
+            
+            const loadingTask = pdfjsLib.getDocument(pdfUrl);
+            pdfDoc = await loadingTask.promise;
+            
+            pageCountEl.textContent = pdfDoc.numPages;
+            pageCountElMobile.textContent = pdfDoc.numPages;
+            paginationControls.style.display = 'block';
+            renderPage(pageNum);
+
+        } catch (error) {
+            loadingMessageEl.textContent = error.message;
+            loadingMessageEl.classList.add('text-red-600');
+            loadingMessageEl.parentElement.querySelector('div').classList.remove('bg-indigo-100');
+            loadingMessageEl.parentElement.querySelector('div').classList.add('bg-red-100');
+            loadingMessageEl.parentElement.querySelector('svg').classList.remove('text-indigo-600', 'animate-spin');
+            loadingMessageEl.parentElement.querySelector('svg').classList.add('text-red-600');
+        }
+    }
+    
+    async function renderPage(num) {
+        const page = await pdfDoc.getPage(num);
+        const viewport = page.getViewport({ scale: 1.5 });
+        
+        pdfViewer.innerHTML = '';
+        const canvas = document.createElement('canvas');
+        const context = canvas.getContext('2d');
+        canvas.height = viewport.height;
+        canvas.width = viewport.width;
+
+        pdfViewer.appendChild(canvas);
+        
+        await page.render({ canvasContext: context, viewport: viewport }).promise;
+
+        pageNumEl.textContent = num;
+        pageNumElMobile.textContent = num;
+        
+        const isFirstPage = num <= 1;
+        const isLastPage = num >= pdfDoc.numPages;
+        
+        prevPageBtn.disabled = isFirstPage;
+        nextPageBtn.disabled = isLastPage;
+        prevPageBtnMobile.disabled = isFirstPage;
+        nextPageBtnMobile.disabled = isLastPage;
+    }
+
+    function goToPrevPage() {
+        if (pageNum <= 1) return;
+        pageNum--;
+        renderPage(pageNum);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    function goToNextPage() {
+        if (pageNum >= pdfDoc.numPages) return;
+        pageNum++;
+        renderPage(pageNum);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    prevPageBtn.addEventListener('click', goToPrevPage);
+    nextPageBtn.addEventListener('click', goToNextPage);
+    prevPageBtnMobile.addEventListener('click', goToPrevPage);
+    nextPageBtnMobile.addEventListener('click', goToNextPage);
+
+    document.addEventListener('DOMContentLoaded', loadBook);
+    </script>
+</body>
+</html>
