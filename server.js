@@ -13,6 +13,7 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY);
+const BUCKET_NAME = 'librarry-asset';
 
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
@@ -103,9 +104,8 @@ app.post('/api/upload', protectAdmin, async (req, res) => {
     }
     try {
         const uniqueFileName = `${Date.now()}-${filename.replace(/\s/g, '_')}`;
-        const bucketName = 'librarry-asset';
         const { error: uploadError } = await supabase.storage
-            .from(bucketName)
+            .from(BUCKET_NAME)
             .upload(uniqueFileName, fileBuffer, {
                 contentType: 'application/pdf',
                 cacheControl: '3600',
@@ -113,7 +113,7 @@ app.post('/api/upload', protectAdmin, async (req, res) => {
             });
         if (uploadError) throw uploadError;
         const { data: { publicUrl } } = supabase.storage
-            .from(bucketName)
+            .from(BUCKET_NAME)
             .getPublicUrl(uniqueFileName);
         await pool.query(
             'INSERT INTO books (title, synopsis, thumbnail_url, file_url) VALUES ($1, $2, $3, $4)',
@@ -126,25 +126,9 @@ app.post('/api/upload', protectAdmin, async (req, res) => {
     }
 });
 
-app.post('/api/login', (req, res) => {
-    const { username, password } = req.body;
-    if (username === process.env.ADMIN_USERNAME && password === process.env.ADMIN_PASSWORD) {
-        const token = jwt.sign({ role: 'admin' }, process.env.ADMIN_JWT_SECRET, { expiresIn: '3d' });
-        res.cookie('admin_token', token, { httpOnly: true, secure: process.env.NODE_ENV === 'production', maxAge: 3 * 24 * 60 * 60 * 1000 });
-        res.json({ success: true, message: 'Login successful' });
-    } else {
-        res.status(401).json({ success: false, message: 'Invalid credentials' });
-    }
-});
-
-app.post('/api/logout', (req, res) => {
-    res.clearCookie('admin_token');
-    res.json({ success: true, message: 'Logged out' });
-});
-
 app.get('/api/books', async (req, res) => {
     try {
-        const result = await pool.query('SELECT id, title, synopsis, thumbnail_url, uploaded_at FROM books ORDER BY uploaded_at DESC');
+        const result = await pool.query('SELECT * FROM books ORDER BY uploaded_at DESC');
         res.json(result.rows);
     } catch (error) {
         console.error('Error fetching books:', error);
@@ -152,19 +136,55 @@ app.get('/api/books', async (req, res) => {
     }
 });
 
-app.get('/api/my-books', async (req, res) => {
-    const { email } = req.query;
-    if (!email) return res.status(400).json({ error: 'Email is required' });
+app.put('/api/books/:id', protectAdmin, async (req, res) => {
+    const { id } = req.params;
+    const { title, synopsis, thumbnail_url } = req.body;
+    if (!title) {
+        return res.status(400).json({ error: 'Judul wajib diisi' });
+    }
     try {
-        const result = await pool.query(`
-            SELECT lr.id as loan_id, lr.status, b.title, b.thumbnail_url
-            FROM loan_requests lr JOIN books b ON lr.book_id = b.id
-            WHERE lr.email = $1 ORDER BY lr.created_at DESC
-        `, [email]);
-        res.json(result.rows);
+        const result = await pool.query(
+            'UPDATE books SET title = $1, synopsis = $2, thumbnail_url = $3 WHERE id = $4 RETURNING *',
+            [title, synopsis, thumbnail_url, id]
+        );
+        if (result.rowCount === 0) {
+            return res.status(404).json({ error: 'Buku tidak ditemukan' });
+        }
+        res.json({ success: true, message: 'Buku berhasil diperbarui', book: result.rows[0] });
     } catch (error) {
-        console.error('Error fetching user books:', error);
+        console.error('Error updating book:', error);
         res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+app.delete('/api/books/:id', protectAdmin, async (req, res) => {
+    const { id } = req.params;
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+        const bookResult = await client.query('SELECT file_url FROM books WHERE id = $1', [id]);
+        if (bookResult.rows.length === 0) {
+            return res.status(404).json({ error: 'Buku tidak ditemukan' });
+        }
+        const fileUrl = bookResult.rows[0].file_url;
+        const fileName = fileUrl.split('/').pop();
+
+        if (fileName) {
+            const { error: deleteError } = await supabase.storage.from(BUCKET_NAME).remove([fileName]);
+            if (deleteError) {
+                console.error('Gagal menghapus file dari Supabase:', deleteError.message);
+            }
+        }
+        
+        await client.query('DELETE FROM books WHERE id = $1', [id]);
+        await client.query('COMMIT');
+        res.json({ success: true, message: 'Buku berhasil dihapus' });
+    } catch (error) {
+        await client.query('ROLLBACK');
+        console.error('Error deleting book:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    } finally {
+        client.release();
     }
 });
 
@@ -195,6 +215,20 @@ app.get('/api/loan-requests', protectAdmin, async (req, res) => {
         res.json(result.rows);
     } catch (error) {
         console.error('Error fetching loan requests:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+app.delete('/api/loan-requests/:id', protectAdmin, async (req, res) => {
+    const { id } = req.params;
+    try {
+        const result = await pool.query('DELETE FROM loan_requests WHERE id = $1', [id]);
+        if (result.rowCount === 0) {
+            return res.status(404).json({ error: 'Permintaan pinjaman tidak ditemukan' });
+        }
+        res.json({ success: true, message: 'Permintaan pinjaman berhasil dihapus' });
+    } catch (error) {
+        console.error('Error deleting loan request:', error);
         res.status(500).json({ error: 'Internal server error' });
     }
 });
@@ -233,7 +267,7 @@ app.post('/api/approve-loan/:id', protectAdmin, async (req, res) => {
             from: `"Perpustakaan Digital" <${process.env.EMAIL_USER}>`,
             to: loanReq.email,
             subject: `✓ Peminjaman Buku "${bookTitle}" Telah Disetujui`,
-               html: `
+              html: `
                 <!DOCTYPE html>
                 <html lang="id">
                 <head>
@@ -295,22 +329,18 @@ app.post('/api/approve-loan/:id', protectAdmin, async (req, res) => {
 app.post('/api/get-read-token', async (req, res) => {
     const { access_code } = req.body;
     if (!access_code) return res.status(400).json({ error: 'Kode akses wajib diisi.' });
-
     try {
         const result = await pool.query(
-            "SELECT access_token, expires_at FROM loan_requests WHERE access_code = $1 AND status = 'approved'",
+            "SELECT access_token, expires_at FROM loan_requests WHERE access_code = $1 AND (status = 'approved' OR status = 'renewed')",
             [access_code.toUpperCase()]
         );
-
         if (result.rows.length === 0) {
             return res.status(404).json({ success: false, error: 'Kode akses tidak valid.' });
         }
-
         const loan = result.rows[0];
         if (new Date(loan.expires_at) < new Date()) {
             return res.status(401).json({ success: false, error: 'Kode akses sudah kedaluwarsa.' });
         }
-        
         res.json({ success: true, token: loan.access_token });
     } catch (error) {
         console.error('Error redeeming access code:', error);
@@ -324,7 +354,7 @@ app.get('/api/read-book', async (req, res) => {
     try {
         const decoded = jwt.verify(queryToken, process.env.JWT_SECRET);
         const { loan_id } = decoded;
-        const loanResult = await pool.query('SELECT * FROM loan_requests WHERE id = $1 AND status = \'approved\'', [loan_id]);
+        const loanResult = await pool.query("SELECT * FROM loan_requests WHERE id = $1 AND (status = 'approved' OR status = 'renewed')", [loan_id]);
         if (loanResult.rows.length === 0) return res.status(403).json({ error: 'Akses tidak valid.' });
         
         const loan = loanResult.rows[0];
@@ -338,6 +368,22 @@ app.get('/api/read-book', async (req, res) => {
         }
         res.status(403).json({ error: 'Token tidak valid.' });
     }
+});
+
+app.post('/api/login', (req, res) => {
+    const { username, password } = req.body;
+    if (username === process.env.ADMIN_USERNAME && password === process.env.ADMIN_PASSWORD) {
+        const token = jwt.sign({ role: 'admin' }, process.env.ADMIN_JWT_SECRET, { expiresIn: '3d' });
+        res.cookie('admin_token', token, { httpOnly: true, secure: process.env.NODE_ENV === 'production', maxAge: 3 * 24 * 60 * 60 * 1000 });
+        res.json({ success: true, message: 'Login successful' });
+    } else {
+        res.status(401).json({ success: false, message: 'Invalid credentials' });
+    }
+});
+
+app.post('/api/logout', (req, res) => {
+    res.clearCookie('admin_token');
+    res.json({ success: true, message: 'Logged out' });
 });
 
 app.get('/dashboard', protectAdmin, (req, res) => res.sendFile(path.join(__dirname, 'public', 'dashboard.html')));
