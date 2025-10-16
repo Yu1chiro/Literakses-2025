@@ -136,6 +136,23 @@ app.get('/api/books', async (req, res) => {
     }
 });
 
+// >>>>> LETAKKAN KODENYA DI SINI <<<<<
+app.get('/api/my-books', async (req, res) => {
+    const { email } = req.query;
+    if (!email) return res.status(400).json({ error: 'Email is required' });
+    try {
+        const result = await pool.query(`
+            SELECT lr.id as loan_id, lr.status, b.title, b.thumbnail_url, lr.access_code, lr.expires_at
+            FROM loan_requests lr JOIN books b ON lr.book_id = b.id
+            WHERE lr.email = $1 ORDER BY lr.created_at DESC
+        `, [email]);
+        res.json(result.rows);
+    } catch (error) {
+        console.error('Error fetching user books:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
 app.put('/api/books/:id', protectAdmin, async (req, res) => {
     const { id } = req.params;
     const { title, synopsis, thumbnail_url } = req.body;
